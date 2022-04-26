@@ -1,10 +1,13 @@
 version: "3.3"
+
 services:
-  db:
-    image: mysql:5.7
+  k3s_db_svc:
+    image: mariadb:latest
+    volumes: 
+      - ./init:/docker-entrypoint-initdb.d
     restart: always
     environment:
-      MYSQL_DATABASE: "db"
+      MYSQL_DATABASE: "k3s_db_dev"
       # So you don't have to use root, but you can if you like
       MYSQL_USER: "k3s"
       # You can use whatever password you like
@@ -18,21 +21,171 @@ services:
       # Opens port 3306 on the container
       - "3306"
     # Where our data will be persisted
-    volumes:
-      - my-db:/var/lib/mysql
+    networks: 
+      - k3s-network
+
   adminer:
     image: adminer
     restart: always
     ports:
       - 8080:8080
+    networks: 
+      - k3s-network
+
+  k3s_server_00:
+    image: "rancher/k3s:${K3S_VERSION:-latest}"
+    depends_on:
+    - k3s_db_svc
+    links:
+          - k3s_db_svc
+    restart: on-failure
+    command:
+    - "server --tls-san localhost"
+    tmpfs:
+    - /run
+    - /var/run
+    privileged: true
+    environment:
+    - K3S_TOKEN=secret
+    - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+    - K3S_KUBECONFIG_MODE=666
+    - K3S_DATASTORE_ENDPOINT=mysql://k3s:k3spass@tcp(k3s_db_svc:3306)/k3s_db_dev
+    volumes:
+    - .:/output
+    ports:
+    - 6441:6443
+    expose:
+      # Opens port 6441 on the container
+      - "6441"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    networks: 
+      - k3s-network
+
+  # k3s_server_01:
+  #   image: "rancher/k3s:${K3S_VERSION:-latest}"
+  #   depends_on:
+  #   - k3s_server_00
+  #   links:
+  #         - k3s_server_00
+  #   restart: on-failure
+  #   command:
+  #   - server
+  #   tmpfs:
+  #   - /run
+  #   - /var/run
+  #   privileged: true
+  #   environment:
+  #   - K3S_TOKEN=secret
+  #   - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+  #   - K3S_KUBECONFIG_MODE=666
+  #   - K3S_DATASTORE_ENDPOINT=mysql://k3s:k3spass@tcp(k3s_db_svc:3306)/k3s_db_dev
+  #   volumes:
+  #   - .:/output
+  #   ports:
+  #   - 6442:6443
+  #   expose:
+  #     # Opens port 6442 on the container
+  #     - "6442"
+  #   networks: 
+  #     - k3s-network
+
+  # k3s_server_02:
+  #   image: "rancher/k3s:${K3S_VERSION:-latest}"
+  #   depends_on:
+  #   - k3s_server_00
+  #   links:
+  #         - k3s_server_00
+  #   restart: on-failure
+  #   command:
+  #   - server
+  #   tmpfs:
+  #   - /run
+  #   - /var/run
+  #   privileged: true
+  #   environment:
+  #   - K3S_TOKEN=secret
+  #   - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+  #   - K3S_KUBECONFIG_MODE=666
+  #   - K3S_DATASTORE_ENDPOINT=mysql://k3s:k3spass@tcp(k3s_db_svc:3306)/k3s_db_dev
+  #   volumes:
+  #   - .:/output
+  #   ports:
+  #   - 6443:6443
+  #   expose:
+  #     # Opens port 6443 on the container
+  #     - "6443"
+  #   networks: 
+  #     - k3s-network
+
+  k3s_agent_00:
+    image: "rancher/k3s:${K3S_VERSION:-latest}"
+    depends_on:
+    - k3s_server_00
+    links:
+          - k3s_server_00
+    restart: on-failure
+    command:
+    - agent
+    tmpfs:
+    - /run
+    - /var/run
+    privileged: true
+    environment:
+    - K3S_URL=https://k3s_server_00:6443
+    - K3S_TOKEN=secret
+
+  k3s_agent_01:
+    image: "rancher/k3s:${K3S_VERSION:-latest}"
+    depends_on:
+    - k3s_server_00
+    links:
+          - k3s_server_00
+    restart: on-failure
+    command:
+    - agent
+    tmpfs:
+    - /run
+    - /var/run
+    privileged: true
+    environment:
+    - K3S_URL=https://k3s_server_00:6443
+    - K3S_TOKEN=secret
+    networks: 
+      - k3s-network
+
+  k3s_agent_02:
+    image: "rancher/k3s:${K3S_VERSION:-latest}"
+    depends_on:
+    - k3s_server_00
+    links:
+          - k3s_server_00
+    restart: on-failure
+    command:
+    - agent
+    tmpfs:
+    - /run
+    - /var/run
+    privileged: true
+    environment:
+    - K3S_URL=https://k3s_server_00:6443
+    - K3S_TOKEN=secret
+    networks: 
+      - k3s-network
 
   nginx:
-    image: "nginx:mainline"
+    image: "nginx:latest"
     ports:
-      - 6443:6443
+      - 443:443
     restart: on-failure
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
+    networks: 
+      - k3s-network
+
+# Names our volume
+volumes:
+  k3s_db_vol:
 
   # haproxy:
   #   image: haproxy:alpine
@@ -43,6 +196,15 @@ services:
   #   volumes:
   #     - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
 
-# Names our volume
-volumes:
-  my-db:
+  # haproxy:
+  #   image: haproxy:alpine
+  #   container_name: haproxy
+  #   restart: always
+  #   ports:
+  #     - "443:6443"
+  #   volumes:
+  #     - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
+networks:
+  k3s-network:
+#    external: true

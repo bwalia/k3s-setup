@@ -1,0 +1,30 @@
+version: "3.3"
+
+services:
+  k3s_server_00:
+      image: "rancher/k3s:${K3S_VERSION:-latest}"
+      # depends_on:
+      # - k3s_db_svc
+      # links:
+      #       - k3s_db_svc
+      # restart: on-failure
+      command:
+      - "server"
+      tmpfs:
+      - /run
+      - /var/run
+      privileged: true
+      environment:
+      - K3S_TOKEN=secret
+      - K3S_CONFIG_FILE=/etc/rancher/k3s/config.yaml
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
+      volumes:
+      - .:/output
+      ports:
+      - 443:6443
+      expose:
+        # Opens port 6441 on the container
+        - "6443"
+      # extra_hosts:
+      #   - "host.docker.internal:host-gateway"
